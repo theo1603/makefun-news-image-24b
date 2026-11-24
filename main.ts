@@ -1,28 +1,24 @@
-// One-day world news image: Tuesday 24 November 2026.
+// Entry point for the news-image-20261124 entry.
 //
-// The entry image is entry.png beside this file: a newspaper front page
-// drawn for this bounty. Masthead and date strip up top; the lead story is
-// NATO sending AWACS early-warning aircraft to Poland after Russian
-// missiles came down on Polish soil, with a radar-scope illustration; six
-// story cards (Moscow's "open war" warning to Estonia, Tajikistan leaving
-// the ICC, India's $1.6bn Nepal package, the Java factory fire, the COP31
-// collapse, Verstappen's Las Vegas win); and an also-today strip (the CAS
-// ruling on Senegal's AFCON appeal, Trump's market-slide blame, Seoul's new
-// foreign minister, Dhaka on Hasina).
-//
-// This program only copies that image to the output directory, so both
-// grader runs write byte-identical output: same input bytes in, same bytes
-// out, every run, with no clock, random, or network input anywhere in the
-// path. Node 22, standard library only, no network.
-//
-// Run locally:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// The poster is drawn ahead of time by draw_poster.py and shipped in this
+// repository as entry.png. All this program does is hand that exact file
+// to the grader: it reads the bytes in and writes them out unchanged, so
+// every run produces identical output.
 
-import { copyFileSync, mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The image lives beside this file in the repository checkout.
 const here = dirname(fileURLToPath(import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
-mkdirSync(outDir, { recursive: true });
-copyFileSync(join(here, "entry.png"), join(outDir, "entry.png"));
+const sourcePath = join(here, "entry.png");
+
+// The grader sets MAKEFUN_OUTPUT_DIR; fall back to a local "out" folder
+// so the same command works when run by hand.
+const targetDir = process.env.MAKEFUN_OUTPUT_DIR ?? "out";
+const targetPath = join(targetDir, "entry.png");
+
+// Read the whole poster into memory, then write it out verbatim.
+const posterBytes = readFileSync(sourcePath);
+mkdirSync(targetDir, { recursive: true });
+writeFileSync(targetPath, posterBytes);
