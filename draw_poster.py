@@ -1,212 +1,242 @@
 #!/usr/bin/env python3
-"""Front page for Tuesday 24 November 2026.
+"""Draw the front page of THE WORLD TODAY for Tuesday 24 November 2026.
 
-Draws a 1024x1024 newspaper front page with Pillow, summarising the
-day's world news from reporting published on 24 November 2026:
-NATO's AWACS deployment to Poland, Moscow's 'open war' warning to
-Estonia, Tajikistan leaving the ICC, India's Nepal package, the Java
-factory fire, the COP31 collapse and Verstappen's Las Vegas win.
-
-Run:  python3 draw_poster.py   -> writes entry.png beside this file.
+Everything here is drawn with Pillow primitives: no photos, no fetched
+assets. The page is a newspaper front page -- masthead, red date band,
+one lead story with a radar illustration, six short stories in a grid,
+and an also-today strip along the bottom.
 """
 
-import math
+import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-W = H = 1024
-PAPER = (248, 243, 232)
-INK = (22, 22, 22)
-NAVY = (18, 30, 58)
-RED = (164, 22, 44)
-GOLD = (196, 154, 32)
-GREY = (96, 92, 84)
-RULE = (205, 197, 180)
-WHITE = (255, 255, 255)
-BODY = (58, 56, 50)
+SHEET = 1024
+EDGE = 36                      # outer margin
+INK = (24, 24, 22)             # near-black for body copy
+PAPER = (250, 246, 236)        # warm newsprint
+CARD = (255, 255, 255)
+BAND = (178, 28, 28)           # the red date band
+NAVY = (16, 34, 58)            # lead picture background
+MUTED = (110, 104, 94)
+RULE = (190, 182, 168)
+ACCENT = (178, 28, 28)
 
-SERIF_B = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"
-SERIF_I = "/usr/share/fonts/truetype/noto/NotoSerif-Italic.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 
 
-def font(path, size):
-    return ImageFont.truetype(path, size)
+def load(name, size):
+    return ImageFont.truetype(os.path.join(FONT_DIR, name), size)
 
 
-def wrap(d, text, face, width):
-    """Greedy word wrap to lines that fit inside width pixels."""
-    lines, cur = [], ""
-    for word in text.split():
-        trial = (cur + " " + word).strip()
-        if d.textlength(trial, font=face) <= width or not cur:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
-    return lines
+class Page:
+    """One sheet plus the fonts and the little helpers every block uses."""
+
+    def __init__(self):
+        self.img = Image.new("RGB", (SHEET, SHEET), PAPER)
+        self.pen = ImageDraw.Draw(self.img)
+        self.serif = lambda s: load("DejaVuSerif-Bold.ttf", s)
+        self.serif_plain = lambda s: load("DejaVuSerif.ttf", s)
+        self.sans = lambda s: load("DejaVuSans-Bold.ttf", s)
+        self.sans_plain = lambda s: load("DejaVuSans.ttf", s)
+
+    def fit(self, text, font, width):
+        """Greedy word wrap; returns a list of lines that fit `width`."""
+        out, current = [], ""
+        for word in text.split():
+            trial = (current + " " + word).strip()
+            if self.pen.textlength(trial, font=font) <= width:
+                current = trial
+            else:
+                if current:
+                    out.append(current)
+                current = word
+        if current:
+            out.append(current)
+        return out
+
+    def block(self, lines, font, x, y, colour, gap):
+        """Draw wrapped lines top-down, returning the y below the last."""
+        for line in lines:
+            self.pen.text((x, y), line, font=font, fill=colour)
+            y += font.size + gap
+        return y
+
+    def centred(self, text, font, y, colour):
+        width = self.pen.textlength(text, font=font)
+        self.pen.text(((SHEET - width) / 2, y), text, font=font, fill=colour)
+        return y + font.size
+
+    def save(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        self.img.save(os.path.join(here, "entry.png"))
 
 
-def lines(d, x, y, text_lines, face, colour, leading):
-    """Draw each line; return the y below the last one."""
-    for line in text_lines:
-        d.text((x, y), line, font=face, fill=colour)
-        y += leading
-    return y
-
-
-def chip(d, x, y, label, colour):
-    """Small filled kicker label; returns the width it occupied."""
-    face = font(SANS_B, 15)
-    w = d.textlength(label, font=face) + 20
-    d.rounded_rectangle([x, y, x + w, y + 25], radius=4, fill=colour)
-    d.text((x + 10, y + 4), label, font=face, fill=WHITE)
-    return w
-
-
-def radar(d, box):
-    """Early-warning radar scope with an AWACS silhouette."""
+def radar_picture(page, box):
+    """Radar scope with a sweeping beam and an AWACS jet above it."""
     x0, y0, x1, y1 = box
-    d.rectangle(box, fill=NAVY)
-    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2 - 8
-    ring = (90, 120, 170)
-    for r in (128, 96, 64, 32):
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=ring, width=2)
-    d.line([cx - 132, cy, cx + 132, cy], fill=ring, width=2)
-    d.line([cx, cy - 132, cx, cy + 132], fill=ring, width=2)
-    # sweep: a few pale radial lines fanning down-right, clear of the
-    # labels at top-left and of the plane silhouette
-    for step in range(5):
-        a = math.radians(20 + step * 12)
-        px = cx + 128 * math.cos(a)
-        py = cy + 128 * math.sin(a)
-        d.line([cx, cy, px, py], fill=(110, 190, 110), width=2)
-    for bx, by in [(cx - 78, cy - 52), (cx - 40, cy + 66), (cx + 88, cy - 30)]:
-        d.ellipse([bx - 5, by - 5, bx + 5, by + 5], fill=(235, 90, 90))
-    # AWACS: radar dome, fuselage, wings, tail
-    d.ellipse([cx - 12, cy - 66, cx + 12, cy - 46], fill=GOLD)
-    d.rectangle([cx - 6, cy - 46, cx + 6, cy + 12], fill=WHITE)
-    d.polygon([(cx - 78, cy - 34), (cx + 78, cy - 34),
-               (cx + 52, cy - 20), (cx - 52, cy - 20)], fill=WHITE)
-    d.polygon([(cx - 6, cy + 12), (cx + 6, cy + 12),
-               (cx + 22, cy + 24), (cx - 22, cy + 24)], fill=WHITE)
-    d.text((x0 + 14, y0 + 10), "E-3 AWACS", font=font(SANS_B, 18), fill=GOLD)
-    d.text((x0 + 14, y0 + 34), "EYES OVER POLAND", font=font(SANS_B, 14),
-           fill=(200, 210, 230))
-    d.rectangle([x0, y1 - 40, x1, y1], fill=(12, 20, 40))
-    d.text((x0 + 14, y1 - 32), "NATO's early-warning fleet",
-           font=font(SANS, 16), fill=WHITE)
+    page.pen.rectangle(box, fill=NAVY)
+    cx, cy = (x0 + x1) // 2, (y0 + y1) // 2 + 18
+    radius = 128
+    for step in range(4):
+        r = radius - step * 30
+        page.pen.ellipse(
+            [cx - r, cy - r, cx + r, cy + r], outline=(64, 120, 92), width=2
+        )
+    page.pen.line([cx - radius, cy, cx + radius, cy], fill=(64, 120, 92), width=1)
+    page.pen.line([cx, cy - radius, cx, cy + radius], fill=(64, 120, 92), width=1)
+    # sweep wedge: a pale green triangle from the centre, pointing up-right
+    page.pen.polygon(
+        [(cx, cy), (cx + 92, cy - 88), (cx + 118, cy - 40)],
+        fill=(96, 190, 120),
+    )
+    page.pen.ellipse(
+        [cx - 5, cy - 5, cx + 5, cy + 5], fill=(190, 230, 170)
+    )
+    # blips on the scope
+    for bx, by in [(cx - 70, cy + 40), (cx + 60, cy + 66), (cx + 30, cy - 70)]:
+        page.pen.ellipse([bx - 4, by - 4, bx + 4, by + 4], fill=(240, 220, 120))
+    # jet silhouette: fuselage, swept wings, tail, radar dome on top
+    jy = y0 + 52
+    page.pen.polygon(
+        [
+            (cx - 150, jy + 6), (cx - 60, jy), (cx + 40, jy),
+            (cx + 150, jy + 6), (cx + 40, jy + 12), (cx - 60, jy + 12),
+        ],
+        fill=(226, 232, 238),
+    )
+    page.pen.polygon(
+        [(cx - 40, jy - 2), (cx + 10, jy - 26), (cx + 34, jy - 26), (cx + 26, jy - 2)],
+        fill=(226, 232, 238),
+    )
+    page.pen.ellipse(
+        [cx - 26, jy - 34, cx + 26, jy - 18], fill=(200, 210, 220)
+    )
+    page.pen.polygon(
+        [(cx - 118, jy + 4), (cx - 96, jy - 18), (cx - 78, jy + 4)],
+        fill=(200, 210, 220),
+    )
+    caption = page.sans_plain(17)
+    page.pen.text((x0 + 14, y1 - 30), "An AWACS jet watches the eastern flank",
+                  font=caption, fill=(210, 222, 232))
 
 
-def card(d, box, kicker, tint, headline, body):
+def lead_story(page):
+    """Picture on the left, headline and deck on the right."""
+    top, bottom = 170, 468
+    radar_picture(page, (EDGE, top, 470, bottom))
+    tx = 496
+    width = SHEET - EDGE - tx
+    page.pen.text((tx, top + 2), "LEAD STORY  —  EUROPE",
+                  font=page.sans(19), fill=ACCENT)
+    head = page.fit(
+        "NATO sends AWACS to watch Poland's skies",
+        page.serif(41), width,
+    )
+    y = page.block(head, page.serif(41), tx, top + 32, INK, 4)
+    deck = page.fit(
+        "Alliance answers the missiles that fell in Poland",
+        page.serif_plain(24), width,
+    )
+    y = page.block(deck, page.serif_plain(24), tx, y + 12, (58, 54, 48), 2)
+    body = page.fit(
+        "Three Russian missiles fell in Poland on Friday. "
+        "NATO answered on Monday, sending an early-warning jet.",
+        page.sans_plain(18), width,
+    )
+    page.block(body, page.sans_plain(18), tx, y + 14, MUTED, 3)
+
+
+def story_card(page, box, tag, headline, standfirst, bar):
+    """One small story: coloured bar, tag, headline, one-line summary."""
     x0, y0, x1, y1 = box
-    d.rectangle(box, fill=WHITE, outline=RULE, width=2)
-    d.rectangle([x0, y0, x0 + 6, y1], fill=tint)
-    d.text((x0 + 18, y0 + 12), kicker, font=font(SANS_B, 14), fill=tint)
-    head = font(SERIF_B, 22)
-    y = lines(d, x0 + 18, y0 + 38,
-              wrap(d, headline, head, (x1 - x0) - 34)[:2], head, INK, 27)
-    body_face = font(SANS, 15)
-    lines(d, x0 + 18, y + 6,
-          wrap(d, body, body_face, (x1 - x0) - 34)[:3], body_face, BODY, 19)
+    page.pen.rectangle(box, fill=CARD, outline=RULE, width=1)
+    page.pen.rectangle([x0, y0, x1, y0 + 7], fill=bar)
+    inner = x0 + 16
+    width = x1 - inner - 14
+    page.pen.text((inner, y0 + 20), tag, font=page.sans(16), fill=bar)
+    head = page.fit(headline, page.serif(25), width)
+    y = page.block(head, page.serif(25), inner, y0 + 46, INK, 2)
+    page.block(
+        page.fit(standfirst, page.sans_plain(17), width),
+        page.sans_plain(17), inner, y + 8, MUTED, 2,
+    )
 
 
-def main():
-    img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
-
-    # ---- masthead ----
-    d.rectangle([0, 0, W, 92], fill=NAVY)
-    d.text((W // 2, 6), "THE WORLD TODAY", font=font(SERIF_B, 58),
-           fill=WHITE, anchor="ma")
-    d.text((W // 2, 68), "ONE DAY  \u2022  ONE PAGE  \u2022  EVERY STORY THAT MATTERED",
-           font=font(SANS_B, 14), fill=GOLD, anchor="ma")
-
-    # ---- date band ----
-    d.rectangle([0, 92, W, 148], fill=RED)
-    d.text((W // 2, 100), "TUESDAY, 24 NOVEMBER 2026",
-           font=font(SERIF_B, 38), fill=WHITE, anchor="ma")
-    d.line([0, 148, W, 148], fill=GOLD, width=4)
-
-    # ---- lead story: radar art left, text right ----
-    radar(d, (36, 168, 420, 452))
-    lx = 448
-    chip(d, lx, 172, "EUROPE  \u2022  NATO", RED)
-    lead = font(SERIF_B, 42)
-    y = lines(d, lx, 208,
-              wrap(d, "NATO sends AWACS to watch Poland's skies", lead, 540),
-              lead, INK, 48)
-    sub = font(SERIF_I, 23)
-    y = lines(d, lx, y + 8,
-              wrap(d, "Alliance answers the missiles that fell in Poland",
-                   sub, 540)[:1], sub, RED, 28)
-    body = font(SANS, 18)
-    lines(d, lx, y + 12,
-          wrap(d, "Three Russian weapons came down in south-east Poland on "
-                  "Friday. Warsaw invoked Article 4 and asked for more air "
-                  "defences; NATO is sending early-warning aircraft.",
-               body, 540)[:3], body, (38, 36, 32), 24)
-    d.line([36, 466, 988, 466], fill=RULE, width=2)
-
-    # ---- six stories, two rows of three ----
+def six_stories(page):
+    """Two rows of three cards."""
     stories = [
-        ("BALTIC", (150, 30, 30),
-         "Moscow warns Estonia of \u2018open war\u2019",
-         "Russia summons Tallinn's envoy after Estonia says it will "
-         "shut its border from 1 December."),
-        ("JUSTICE", (60, 60, 160),
-         "Tajikistan quits the ICC",
-         "Dushanbe formally leaves the Rome Statute; the EU urges it "
-         "to reconsider and reverse course."),
-        ("ASIA", (200, 90, 0),
-         "India pledges $1.6bn to Nepal",
-         "Modi and Nepal's PM Shah agree a big aid package and flag "
-         "off a new cross-border rail link."),
-        ("INDONESIA", (0, 120, 120),
-         "Java factory fire: 24 dead",
-         "Rescuers keep searching for about 30 people still missing "
-         "after the blaze in Banten."),
-        ("CLIMATE", (30, 130, 30),
-         "COP31 ends with no deal",
-         "Antalya talks collapse over fossil fuels; countries leave "
-         "without a consensus text."),
-        ("SPORT", (160, 20, 40),
-         "Verstappen wins in Las Vegas",
-         "Red Bull's champion takes the Grand Prix; India and New "
-         "Zealand draw the Wellington Test."),
+        ("EUROPE", "Moscow warns Estonia of 'open war'",
+         "Border shut from 1 December", (122, 30, 30)),
+        ("ASIA", "Tajikistan quits the ICC",
+         "Dushanbe leaves the Hague court", (24, 84, 122)),
+        ("ASIA", "India pledges $1.6bn to Nepal",
+         "Aid package for Kathmandu", (24, 84, 122)),
+        ("ASIA", "Java factory fire: 24 dead",
+         "Around 30 still missing", (150, 84, 20)),
+        ("CLIMATE", "COP31 ends with no deal",
+         "Talks close without agreement", (30, 110, 60)),
+        ("SPORT", "Verstappen wins in Las Vegas",
+         "Red Bull star takes the flag", (120, 60, 140)),
     ]
-    cw, ch, gap = 304, 168, 12
-    for i, (kick, tint, head, body) in enumerate(stories):
-        cx = 36 + (i % 3) * (cw + gap)
-        cy = 480 + (i // 3) * (ch + gap)
-        card(d, (cx, cy, cx + cw, cy + ch), kick, tint, head, body)
+    gap = 16
+    cell_w = (SHEET - 2 * EDGE - 2 * gap) // 3
+    cell_h = 158
+    y = 490
+    for row in range(2):
+        for col in range(3):
+            item = stories[row * 3 + col]
+            x0 = EDGE + col * (cell_w + gap)
+            story_card(
+                page,
+                (x0, y, x0 + cell_w, y + cell_h),
+                item[0], item[1], item[2], item[3],
+            )
+        y += cell_h + gap
 
-    # ---- also today ----
-    ay = 840
-    d.rectangle([0, ay, W, 948], fill=NAVY)
-    d.text((36, ay + 10), "ALSO TODAY", font=font(SANS_B, 19), fill=GOLD)
-    items = ("CAS to rule on Senegal's AFCON title appeal  \u2022  Trump "
-             "blames Democrats for the $1tn market slide  \u2022  Seoul "
-             "names a new foreign minister  \u2022  Dhaka vows to arrest "
-             "Hasina if she returns")
-    lines(d, 36, ay + 40,
-          wrap(d, items, font(SANS, 18), 952), font(SANS, 18), WHITE, 25)
 
-    # ---- footer ----
-    d.text((W // 2, 958),
-           "Drawn from the day\u2019s reporting  \u2022  Reuters  \u2022  AP  \u2022  AFP",
-           font=font(SERIF_I, 17), fill=GREY, anchor="ma")
-    d.text((W // 2, 982), "THE WORLD TODAY  \u2014  TUESDAY 24 NOVEMBER 2026",
-           font=font(SANS_B, 14), fill=BODY, anchor="ma")
-    d.line([W // 2 - 60, 1012, W // 2 + 60, 1012], fill=GOLD, width=3)
+def also_today(page):
+    """Four short items in a row under an ALSO TODAY heading."""
+    y0 = 852
+    page.pen.rectangle([EDGE, y0, SHEET - EDGE, 962], fill=(238, 232, 220))
+    page.pen.text((EDGE + 16, y0 + 12), "ALSO TODAY",
+                  font=page.sans(18), fill=ACCENT)
+    items = [
+        "CAS to rule on Senegal's AFCON appeal",
+        "Trump blames Democrats for the $1tn market slide",
+        "Seoul names a new foreign minister",
+        "Dhaka vows to arrest Hasina if she returns",
+    ]
+    gap = 14
+    col_w = (SHEET - 2 * EDGE - 32 - 3 * gap) // 4
+    for i, item in enumerate(items):
+        x = EDGE + 16 + i * (col_w + gap)
+        page.pen.text((x, y0 + 46), "•", font=page.sans_plain(18), fill=ACCENT)
+        page.block(
+            page.fit(item, page.sans_plain(17), col_w - 18),
+            page.sans_plain(17), x + 16, y0 + 46, INK, 2,
+        )
 
-    img.save("entry.png", optimize=True)
-    print("wrote entry.png")
+
+def build():
+    page = Page()
+    # Masthead
+    page.centred("THE WORLD TODAY", page.serif(74), 26, INK)
+    page.pen.line([EDGE, 116, SHEET - EDGE, 116], fill=INK, width=3)
+    page.pen.line([EDGE, 121, SHEET - EDGE, 121], fill=INK, width=1)
+    # Red date band
+    page.pen.rectangle([EDGE, 130, SHEET - EDGE, 160], fill=BAND)
+    page.centred("TUESDAY, 24 NOVEMBER 2026", page.sans(26), 133, (255, 255, 255))
+    lead_story(page)
+    six_stories(page)
+    also_today(page)
+    page.pen.text(
+        (EDGE, 978),
+        "THE WORLD TODAY  •  24 NOVEMBER 2026  •  One day's world news in one page",
+        font=page.sans_plain(15), fill=MUTED,
+    )
+    page.save()
 
 
 if __name__ == "__main__":
-    main()
+    build()
